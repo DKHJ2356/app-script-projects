@@ -156,23 +156,35 @@ function submitFare() {
   const year    = now.getFullYear();
   const month   = now.toLocaleString("default", { month: "long" });
 
-  // Fix Bug 1 — find existing PENDING row for same name+date and fill it instead of always appending
+  // Find existing PENDING row for same name+date — normalize date to string for safe comparison
   const data = sheet.getDataRange().getValues();
   let pendingRowIndex = -1;
   for (let i = 4; i < data.length; i++) {
-    if (String(data[i][0]) === dateStr && String(data[i][3]) === name && data[i][5] === "PENDING") {
-      pendingRowIndex = i + 1; // convert to 1-based sheet row
+    const cellDate = data[i][0];
+    // Normalize: Date objects and strings both convert to yyyy-MM-dd for comparison
+    const rowDateStr = cellDate instanceof Date
+      ? Utilities.formatDate(cellDate, Session.getScriptTimeZone(), "yyyy-MM-dd")
+      : String(cellDate).substring(0, 10);
+    const rowName   = String(data[i][3]).trim();
+    const rowStatus = String(data[i][5]);
+    if (rowDateStr === dateStr && rowName === name && rowStatus === "PENDING") {
+      pendingRowIndex = i + 1; // 1-based sheet row
       break;
     }
   }
 
   if (pendingRowIndex > -1) {
-    // Fill the existing PENDING row — no new row added
-    sheet.getRange(pendingRowIndex, 5).setValue(fare);
+    // Fill the existing PENDING row in-place — no new row added
+    sheet.getRange(pendingRowIndex, 5).setValue(fare).setHorizontalAlignment("center");
     sheet.getRange(pendingRowIndex, 6).setValue("FILLED");
   } else {
     // No PENDING row found — append a new FILLED row
+    const newRow = sheet.getLastRow() + 1;
     sheet.appendRow([dateStr, year, month, name, fare, "FILLED"]);
+    // Re-apply formatting to the new row so it matches the rest of the log
+    sheet.getRange(newRow, 1).setNumberFormat("yyyy-mm-dd");
+    sheet.getRange(newRow, 6).setHorizontalAlignment("center")
+      .setBackground("#dcfce7").setFontColor("#166534");
   }
 
   // Clear input zone — including F2 to prevent stale status display
@@ -307,37 +319,48 @@ function sendDMs(type, dateStr, users) {
 function applyStatusFormatting() {
   const ss      = SpreadsheetApp.openById(SHEET_ID);
   const fareLog = ss.getSheetByName(FARE_LOG_TAB);
+  const summary = ss.getSheetByName(SUMMARY_TAB);
 
-  // Log rows start at row 4 (rows 1-3 = input zone + divider)
-  const statusRange = fareLog.getRange("F4:F1000");
-  statusRange.setHorizontalAlignment("center");
-
+  // ── FareLog — Status column F, rows 4+ ──
+  const fareLogStatusRange = fareLog.getRange("F4:F1000");
+  fareLogStatusRange.setHorizontalAlignment("center");
   fareLog.clearConditionalFormatRules();
+  fareLog.setConditionalFormatRules([
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo("FILLED")
+      .setBackground("#dcfce7").setFontColor("#166534")
+      .setRanges([fareLogStatusRange]).build(),
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo("PENDING")
+      .setBackground("#fef3c7").setFontColor("#92400e")
+      .setRanges([fareLogStatusRange]).build(),
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo("ESCALATED")
+      .setBackground("#fee2e2").setFontColor("#991b1b")
+      .setRanges([fareLogStatusRange]).build(),
+  ]);
 
-  const filledRule = SpreadsheetApp.newConditionalFormatRule()
-    .whenTextEqualTo("FILLED")
-    .setBackground("#dcfce7")
-    .setFontColor("#166534")
-    .setRanges([statusRange])
-    .build();
+  // ── Summary — Status column F, rows 5+ (FILTER results) ──
+  const summaryStatusRange = summary.getRange("F5:F1000");
+  summaryStatusRange.setHorizontalAlignment("center");
+  summary.clearConditionalFormatRules();
+  summary.setConditionalFormatRules([
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo("FILLED")
+      .setBackground("#dcfce7").setFontColor("#166534")
+      .setRanges([summaryStatusRange]).build(),
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo("PENDING")
+      .setBackground("#fef3c7").setFontColor("#92400e")
+      .setRanges([summaryStatusRange]).build(),
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo("ESCALATED")
+      .setBackground("#fee2e2").setFontColor("#991b1b")
+      .setRanges([summaryStatusRange]).build(),
+  ]);
 
-  const pendingRule = SpreadsheetApp.newConditionalFormatRule()
-    .whenTextEqualTo("PENDING")
-    .setBackground("#fef3c7")
-    .setFontColor("#92400e")
-    .setRanges([statusRange])
-    .build();
-
-  const escalatedRule = SpreadsheetApp.newConditionalFormatRule()
-    .whenTextEqualTo("ESCALATED")
-    .setBackground("#fee2e2")
-    .setFontColor("#991b1b")
-    .setRanges([statusRange])
-    .build();
-
-  fareLog.setConditionalFormatRules([filledRule, pendingRule, escalatedRule]);
   SpreadsheetApp.flush();
-  Logger.log("applyStatusFormatting() complete.");
+  Logger.log("applyStatusFormatting() complete — applied to FareLog and Summary.");
 }
 
 // ── Fix Summary Formula ────────────────────────────────────────────────────
