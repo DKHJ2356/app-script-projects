@@ -2,7 +2,7 @@
 const FARE_LOG_TAB = "FareLog";
 const SUMMARY_TAB  = "Summary";
 const USERS_TAB    = "Users";
-const SHEET_ID     = "15Rxvef6ULWpT1WP0ZaMcKjClfK77iP_rJBuVdhl0VBQ";
+const SHEET_ID     = "";
 const PAUSE_KEY    = "PAUSED";
 
 // Days to run: Sunday=0, Monday=1, Wednesday=3
